@@ -1,12 +1,15 @@
 from fastapi import FastAPI, HTTPException, Query
 import sqlite3
+from pathlib import Path
 
-app = FastAPI(title="Demo Vulnerable FastAPI", version="1.0.0")
+app = FastAPI(title="Demo Vulnerable FastAPI", version="1.0.1")
+DB_PATH = Path("/tmp/app-data/demo.db")
 
 
 @app.on_event("startup")
 def startup() -> None:
-    conn = sqlite3.connect("demo.db")
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
     cur.execute("INSERT OR IGNORE INTO users (id, username, password) VALUES (1, 'admin', 'admin123')")
@@ -22,7 +25,7 @@ def health() -> dict:
 
 @app.get("/users/search")
 def search_users(username: str = Query(..., min_length=1)) -> dict:
-    conn = sqlite3.connect("demo.db")
+    conn = sqlite3.connect(str(DB_PATH))
     cur = conn.cursor()
     query = f"SELECT id, username FROM users WHERE username = '{username}'"
     try:
