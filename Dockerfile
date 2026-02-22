@@ -5,16 +5,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup --home /app appuser
+RUN addgroup --system --gid 10001 appgroup \
+    && adduser --system --uid 10001 --ingroup appgroup --home /app appuser
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
-RUN mkdir -p /tmp/app-data && chown -R appuser:appgroup /app /tmp/app-data
+RUN mkdir -p /tmp/app-data && chown -R 10001:10001 /app /tmp/app-data
 
-USER appuser
+USER 10001:10001
 
 EXPOSE 8080
 

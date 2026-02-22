@@ -58,6 +58,7 @@ If you keep strictly immutable tags, you can use:
 ```text
 ghcr.io/<ORG_OR_USER>/demo-vulnerable-fastapi:v1.0.0
 ghcr.io/<ORG_OR_USER>/demo-vulnerable-fastapi:v1.0.1
+ghcr.io/<ORG_OR_USER>/demo-vulnerable-fastapi:v1.0.2
 
 ```
 
@@ -66,8 +67,8 @@ Do not use `latest`.
 ## 6) Test the app locally (optional)
 
 ```bash
-docker build -t demo-vuln-fastapi:v1.0.1 .
-docker run --rm -p 8080:8080 demo-vuln-fastapi:v1.0.1
+docker build -t demo-vuln-fastapi:v1.0.2 .
+docker run --rm -p 8080:8080 demo-vuln-fastapi:v1.0.2
 curl http://localhost:8080/health
 
 ```

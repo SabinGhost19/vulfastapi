@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 import sqlite3
 from pathlib import Path
 
-app = FastAPI(title="Demo Vulnerable FastAPI", version="1.0.1")
+app = FastAPI(title="Demo Vulnerable FastAPI", version="1.0.2")
 DB_PATH = Path("/tmp/app-data/demo.db")
 
 
