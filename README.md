@@ -1,0 +1,71 @@
+# Demo Vulnerable FastAPI App
+
+This repo is used to generate a signed image in GHCR for testing the `ZeroTrustApplication` Operator.
+
+## What the pipeline produces
+
+* Build Docker image
+* Push to `ghcr.io`
+* Trivy scan (blocks on `HIGH`/`CRITICAL`)
+* Cosign keyless signing
+* Self-verify Cosign
+* Output with `IMAGE_REF` and `SIGNER`
+
+## 1) Create a repository on GitHub
+
+Example repo name: `demo-vulnerable-fastapi`
+
+## 2) Copy local content to the repo
+
+From [customCRD/demo-app](https://www.google.com/search?q=customCRD/demo-app):
+
+```bash
+cd /home/sabinghosty19/Desktop/LICENTA/customCRD/demo-app
+git init
+git add .
+git commit -m "Initial demo app with CI/CD supply-chain"
+git branch -M main
+git remote add origin git@github.com:<ORG_OR_USER>/<REPO>.git
+git push -u origin main
+
+```
+
+## 3) Run the workflow
+
+* Runs automatically on push to `main`.
+* Check the `build-scan-sign` job in GitHub Actions.
+
+## 4) Extract values for the ZTA CRD
+
+From the Job Summary:
+
+* `IMAGE_REF` (ideal for immutable reference)
+* `SIGNER`
+
+The `SIGNER` must be used in the ZTA:
+
+```text
+https://github.com/<ORG_OR_USER>/<REPO>/.github/workflows/ci-cd.yaml@refs/heads/main
+
+```
+
+## 5) Tag variant (without digest)
+
+If you keep strictly immutable tags, you can use:
+
+```text
+ghcr.io/<ORG_OR_USER>/demo-vulnerable-fastapi:v1.0.0
+
+```
+
+Do not use `latest`.
+
+## 6) Test the app locally (optional)
+
+```bash
+docker build -t demo-vuln-fastapi:v1.0.0 .
+docker run --rm -p 8080:8080 demo-vuln-fastapi:v1.0.0
+curl http://localhost:8080/health
+
+```
+
