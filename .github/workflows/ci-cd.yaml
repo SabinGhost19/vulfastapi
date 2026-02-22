@@ -14,7 +14,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/demo-vulnerable-fastapi
 
 jobs:
   build-scan-sign:
@@ -23,6 +22,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Normalize image repository name
+        id: imagevars
+        shell: bash
+        run: |
+          echo "image_repo=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/demo-vulnerable-fastapi" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -41,7 +46,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.imagevars.outputs.image_repo }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -60,7 +65,7 @@ jobs:
       - name: Run Trivy scan on pushed image digest
         uses: aquasecurity/trivy-action@0.24.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+          image-ref: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           format: table
           severity: HIGH,CRITICAL
           exit-code: 1
@@ -73,16 +78,16 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "false"
         run: |
-          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+          cosign sign --yes ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
 
       - name: Verify image signature (self-check)
         run: |
           cosign verify \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }} \
+            ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }} \
             --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
       - name: Output immutable image reference
         run: |
-          echo "IMAGE_REF=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "IMAGE_REF=${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo "SIGNER=https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main" >> $GITHUB_STEP_SUMMARY
