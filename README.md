@@ -6,11 +6,12 @@ This repo is used to generate a signed image in GHCR for testing the `ZeroTrustA
 
 * Build Docker image
 * Push to `ghcr.io`
-* Trivy scan (blocks on `HIGH`/`CRITICAL`)
+ * Trivy scan (non-blocking în modul demo curent; raportează `HIGH`/`CRITICAL` fără fail)
 * Cosign keyless signing
 * Self-verify Cosign
 * Output with `IMAGE_REF` and `SIGNER`
 
+Notă: pentru mod strict (production-like), setează `exit-code: 1` în workflow-ul `ci-cd.yaml`.
 ## 1) Create a repository on GitHub
 
 Example repo name: `demo-vulnerable-fastapi`

@@ -68,8 +68,10 @@ jobs:
           image-ref: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           format: table
           severity: HIGH,CRITICAL
-          exit-code: 1
+          exit-code: 0
           ignore-unfixed: true
+          scanners: vuln
+          hide-progress: true
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
