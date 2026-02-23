@@ -86,11 +86,11 @@ jobs:
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
 
       - name: Attach ZTA policy attestation
-        uses: SabinGhost19/policyAttestor-action@v1.0.3
+        uses: SabinGhost19/policyAttestor-action@main
         with:
           image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           policy-path: ./security-policy.yaml
-          attestation-type: custom-zta-policy
+          attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
       - name: Sign image with Cosign keyless
         env:
