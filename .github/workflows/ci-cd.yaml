@@ -86,7 +86,7 @@ jobs:
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
 
       - name: Attach ZTA policy attestation
-        uses: SabinGhost19/zta-policy-attestor@v1
+        uses: SabinGhost19/policyAttestor-action@v1.0.3
         with:
           image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           policy-path: ./security-policy.yaml
