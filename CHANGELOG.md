@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.0.0...v1.1.0) (2026-02-23)
+
+
+### Features
+
+* use released custom action ([5f51bb6](https://github.com/SabinGhost19/vulfastapi/commit/5f51bb62026df392be9487ccd0ecce87cc53382e))
+
 # 1.0.0 (2026-02-23)
 
 
