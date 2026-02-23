@@ -1,0 +1,16 @@
+policyVersion: "1.0"
+workloadIdentity: "demo-api"
+securityBoundaries:
+  network:
+    allowGlobalInternet: false
+    allowedEgressNamespaces:
+      - database
+    restrictedPorts:
+      - 22
+      - 3306
+  secrets:
+    requireZeroTrustSecrets: true
+    allowedVaultPaths:
+      - secret/data/prod/demo-api/config
+  runtime:
+    runAsRoot: false

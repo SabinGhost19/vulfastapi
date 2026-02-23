@@ -76,6 +76,22 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
 
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate and attest SBOM (spdxjson)
+        run: |
+          IMAGE_REF=${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
+          syft "$IMAGE_REF" -o spdx-json > sbom.spdx.json
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
+
+      - name: Attach ZTA policy attestation
+        uses: ./customCRD/customGithubActionAction-zta-policy-attestor
+        with:
+          image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
+          policy-path: ./customCRD/demo-app/security-policy.yaml
+          attestation-type: custom-zta-policy
+
       - name: Sign image with Cosign keyless
         env:
           COSIGN_EXPERIMENTAL: "false"
