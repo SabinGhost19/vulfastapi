@@ -86,10 +86,10 @@ jobs:
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
 
       - name: Attach ZTA policy attestation
-        uses: ./customCRD/customGithubActionAction-zta-policy-attestor
+        uses: SabinGhost19/zta-policy-attestor@v1
         with:
           image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
-          policy-path: ./customCRD/demo-app/security-policy.yaml
+          policy-path: ./security-policy.yaml
           attestation-type: custom-zta-policy
 
       - name: Sign image with Cosign keyless
