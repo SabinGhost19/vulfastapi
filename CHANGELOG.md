@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.0...v1.1.1) (2026-02-23)
+
+
+### Bug Fixes
+
+* action name ([319cad1](https://github.com/SabinGhost19/vulfastapi/commit/319cad19a167db7a484ba0011a6f662a053739ff))
+
 # [1.1.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.0.0...v1.1.0) (2026-02-23)
 
 
