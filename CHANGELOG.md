@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.1...v1.1.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* attestation ci ([1e8e61e](https://github.com/SabinGhost19/vulfastapi/commit/1e8e61ea55b27287cba7073d262fbd8fba108d16))
+
 ## [1.1.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.0...v1.1.1) (2026-02-23)
 
 
