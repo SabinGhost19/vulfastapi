@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.2...v1.1.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* realeaserc successComment: false ([8bd6476](https://github.com/SabinGhost19/vulfastapi/commit/8bd647693b7314a13a0689689d0a2b728001f769))
+
 ## [1.1.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.1...v1.1.2) (2026-02-23)
 
 
