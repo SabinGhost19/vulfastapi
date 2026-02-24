@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.1...v1.3.2) (2026-02-24)
+
+
+### Bug Fixes
+
+* verify attestations and expected infra hash with correct algo ([8e5bc2d](https://github.com/SabinGhost19/vulfastapi/commit/8e5bc2da5215db75edfad91d82629bcfb756edcb))
+
 ## [1.3.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.0...v1.3.1) (2026-02-24)
 
 
