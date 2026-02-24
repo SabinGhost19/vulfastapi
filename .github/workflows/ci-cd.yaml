@@ -14,6 +14,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  MANIFESTS_REPO: SabinGhost19/vulfastapi-manifests-samples
+  MANIFESTS_REF: main
+  MANIFESTS_SUBPATH: demo-app
 
 jobs:
   build-scan-sign:
@@ -22,6 +25,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MANIFESTS_REPO }}
+          ref: ${{ env.MANIFESTS_REF }}
+          path: k8s-repo
 
       - name: Normalize image repository name
         id: imagevars
@@ -90,6 +100,7 @@ jobs:
         with:
           image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           policy-path: ./security-policy.yaml
+          manifest-dir: ./k8s-repo/${{ env.MANIFESTS_SUBPATH }}
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
       - name: Sign image with Cosign keyless
