@@ -154,9 +154,24 @@ jobs:
             exit 1
           fi
 
-          LOCAL_HASH=$(yq ea -o=json '[select(.kind == "ZeroTrustApplication") | .spec]' ./${{ env.MANIFESTS_REPO }}/${{ env.MANIFESTS_SUBPATH }}/*.y*ml | jq -c -S '.[0]' | sha256sum | awk '{print $1}')
+          mapfile -t YAML_FILES < <(find "$MANIFEST_DIR" -type f \( -name '*.yaml' -o -name '*.yml' \) | sort)
+          if [ ${#YAML_FILES[@]} -eq 0 ]; then
+            echo "No YAML files found in manifest directory: $MANIFEST_DIR" >&2
+            exit 1
+          fi
 
-          if [ "$ATTESTED_HASH" != "$LOCAL_HASH" ]; then
+          ZTA_SPECS_JSON="$(yq ea -o=json '[select(.kind == "ZeroTrustApplication") | .spec]' "${YAML_FILES[@]}")"
+          SPEC_COUNT="$(printf '%s' "$ZTA_SPECS_JSON" | jq 'length')"
+          if [ "$SPEC_COUNT" -ne 1 ]; then
+            echo "Expected exactly one ZeroTrustApplication spec in manifest directory, found: $SPEC_COUNT" >&2
+            exit 1
+          fi
+
+          LOCAL_HASH=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S '.[0]' | sha256sum | awk '{print $1}')
+          ATTESTED_HASH_NORMALIZED=$(echo "$ATTESTED_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
+          LOCAL_HASH_NORMALIZED=$(echo "$LOCAL_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
+
+          if [ "$ATTESTED_HASH_NORMALIZED" != "$LOCAL_HASH_NORMALIZED" ]; then
             echo "expected_infra_hash mismatch: attested=$ATTESTED_HASH local=$LOCAL_HASH" >&2
             exit 1
           fi
