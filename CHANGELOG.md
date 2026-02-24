@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.2...v1.3.3) (2026-02-24)
+
+
+### Bug Fixes
+
+* verify ([a2486bc](https://github.com/SabinGhost19/vulfastapi/commit/a2486bced15b980d699fa2af0740568389dfce34))
+
 ## [1.3.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.1...v1.3.2) (2026-02-24)
 
 
