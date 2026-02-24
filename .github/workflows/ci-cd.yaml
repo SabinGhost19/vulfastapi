@@ -159,7 +159,8 @@ jobs:
             exit 1
           fi
 
-          LOCAL_HASH=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S '.[0]' | sha256sum | awk '{print $1}')
+          CANONICAL_SPEC=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S '.[0]')
+          LOCAL_HASH=$(printf '%s' "$CANONICAL_SPEC" | sha256sum | awk '{print $1}')
           LOCAL_HASH_NORMALIZED=$(echo "$LOCAL_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
 
           mapfile -t ATTESTED_HASHES < <(
