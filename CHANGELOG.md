@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.3...v1.2.0) (2026-02-24)
+
+
+### Features
+
+* hash attestation added ([708e6ee](https://github.com/SabinGhost19/vulfastapi/commit/708e6eea972366500cc0df1a3e6966c9804f8493))
+
 ## [1.1.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.2...v1.1.3) (2026-02-23)
 
 
