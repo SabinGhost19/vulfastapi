@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.0...v1.3.1) (2026-02-24)
+
+
+### Bug Fixes
+
+* workflow github auth ([9a8ed5c](https://github.com/SabinGhost19/vulfastapi/commit/9a8ed5cf05776400eb3e17b77a26a4f724cd3b10))
+
 # [1.3.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.2...v1.3.0) (2026-02-24)
 
 
