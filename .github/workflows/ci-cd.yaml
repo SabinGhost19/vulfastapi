@@ -57,7 +57,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha,prefix=sha-
-            type=raw,value=v1.1.3,enable={{is_default_branch}}
+            type=raw,value=v1.1.5,enable={{is_default_branch}}
 
       - name: Build and push image
         id: build-and-push
@@ -146,14 +146,6 @@ jobs:
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             >/tmp/policy-attestation.jsonl
 
-          jq -r '.payload' /tmp/policy-attestation.jsonl | head -n1 | base64 -d >/tmp/policy-statement.json
-          ATTESTED_HASH=$(jq -r '.predicate.expected_infra_hash // empty' /tmp/policy-statement.json)
-
-          if [ -z "$ATTESTED_HASH" ]; then
-            echo "expected_infra_hash missing from policy attestation predicate" >&2
-            exit 1
-          fi
-
           mapfile -t YAML_FILES < <(find "$MANIFEST_DIR" -type f \( -name '*.yaml' -o -name '*.yml' \) | sort)
           if [ ${#YAML_FILES[@]} -eq 0 ]; then
             echo "No YAML files found in manifest directory: $MANIFEST_DIR" >&2
@@ -168,11 +160,36 @@ jobs:
           fi
 
           LOCAL_HASH=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S '.[0]' | sha256sum | awk '{print $1}')
-          ATTESTED_HASH_NORMALIZED=$(echo "$ATTESTED_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
           LOCAL_HASH_NORMALIZED=$(echo "$LOCAL_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
 
-          if [ "$ATTESTED_HASH_NORMALIZED" != "$LOCAL_HASH_NORMALIZED" ]; then
-            echo "expected_infra_hash mismatch: attested=$ATTESTED_HASH local=$LOCAL_HASH" >&2
+          mapfile -t ATTESTED_HASHES < <(
+            jq -r '.payload' /tmp/policy-attestation.jsonl \
+              | while read -r payload; do
+                  printf '%s' "$payload" | base64 -d | jq -r '.predicate.expected_infra_hash // empty'
+                done \
+              | sed '/^$/d' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/^sha256://' \
+              | sort -u
+          )
+
+          if [ ${#ATTESTED_HASHES[@]} -eq 0 ]; then
+            echo "No expected_infra_hash values found in policy attestations" >&2
+            exit 1
+          fi
+
+          MATCH_FOUND="false"
+          for h in "${ATTESTED_HASHES[@]}"; do
+            if [ "$h" = "$LOCAL_HASH_NORMALIZED" ]; then
+              MATCH_FOUND="true"
+              break
+            fi
+          done
+
+          if [ "$MATCH_FOUND" != "true" ]; then
+            echo "expected_infra_hash mismatch: none of attested hashes match local hash" >&2
+            echo "attested_hashes=${ATTESTED_HASHES[*]}" >&2
+            echo "local_hash=$LOCAL_HASH" >&2
             exit 1
           fi
 
@@ -183,7 +200,8 @@ jobs:
           echo "- POLICY_ATTESTATION_TYPE=https://devsecops.licenta.ro/attestations/custom-zta-policy/v1" >> "$GITHUB_STEP_SUMMARY"
           echo "- SBOM_ATTESTATION_TYPE=spdxjson" >> "$GITHUB_STEP_SUMMARY"
           echo "- MANIFEST_DIR=$MANIFEST_DIR" >> "$GITHUB_STEP_SUMMARY"
-          echo "- EXPECTED_INFRA_HASH=$ATTESTED_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ATTESTED_INFRA_HASH_COUNT=${#ATTESTED_HASHES[@]}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ATTESTED_INFRA_HASHES=${ATTESTED_HASHES[*]}" >> "$GITHUB_STEP_SUMMARY"
           echo "- COMPUTED_INFRA_HASH=$LOCAL_HASH" >> "$GITHUB_STEP_SUMMARY"
           echo "- RESULT=PASS" >> "$GITHUB_STEP_SUMMARY"
 
