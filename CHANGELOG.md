@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.1...v1.2.2) (2026-02-24)
+
+
+### Bug Fixes
+
+* manifest path and repo from env ([71ccec1](https://github.com/SabinGhost19/vulfastapi/commit/71ccec18939735dde0cdd9e069951baf2ada1fd4))
+
 ## [1.2.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.0...v1.2.1) (2026-02-24)
 
 
