@@ -31,7 +31,7 @@ jobs:
         with:
           repository: ${{ env.MANIFESTS_REPO }}
           ref: ${{ env.MANIFESTS_REF }}
-          path: k8s-repo
+          path: ${{ env.MANIFESTS_REPO }}
 
       - name: Normalize image repository name
         id: imagevars
@@ -100,7 +100,7 @@ jobs:
         with:
           image: ${{ steps.imagevars.outputs.image_repo }}@${{ steps.build-and-push.outputs.digest }}
           policy-path: ./security-policy.yaml
-          manifest-dir: ./k8s-repo/${{ env.MANIFESTS_SUBPATH }}
+          manifest-dir: ./${{ env.MANIFESTS_REPO }}/${{ env.MANIFESTS_SUBPATH }}
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
       - name: Sign image with Cosign keyless
