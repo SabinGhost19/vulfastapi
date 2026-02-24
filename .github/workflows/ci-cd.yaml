@@ -102,6 +102,13 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0
 
@@ -119,6 +126,52 @@ jobs:
           manifest-dir: ./${{ env.MANIFESTS_REPO }}/${{ env.MANIFESTS_SUBPATH }}
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
+      - name: Verify attestations and expected infra hash
+        run: |
+          IMAGE_REF=${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main"
+          MANIFEST_DIR="./${{ env.MANIFESTS_REPO }}/${{ env.MANIFESTS_SUBPATH }}"
+
+          cosign verify-attestation \
+            "$IMAGE_REF" \
+            --type spdxjson \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            >/tmp/sbom-attestation.jsonl
+
+          cosign verify-attestation \
+            "$IMAGE_REF" \
+            --type "https://devsecops.licenta.ro/attestations/custom-zta-policy/v1" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            >/tmp/policy-attestation.jsonl
+
+          jq -r '.payload' /tmp/policy-attestation.jsonl | head -n1 | base64 -d >/tmp/policy-statement.json
+          ATTESTED_HASH=$(jq -r '.predicate.expected_infra_hash // empty' /tmp/policy-statement.json)
+
+          if [ -z "$ATTESTED_HASH" ]; then
+            echo "expected_infra_hash missing from policy attestation predicate" >&2
+            exit 1
+          fi
+
+          LOCAL_HASH=$(yq ea -o=json '[select(.kind == "ZeroTrustApplication") | .spec]' ./${{ env.MANIFESTS_REPO }}/${{ env.MANIFESTS_SUBPATH }}/*.y*ml | jq -c -S '.[0]' | sha256sum | awk '{print $1}')
+
+          if [ "$ATTESTED_HASH" != "$LOCAL_HASH" ]; then
+            echo "expected_infra_hash mismatch: attested=$ATTESTED_HASH local=$LOCAL_HASH" >&2
+            exit 1
+          fi
+
+          echo "SBOM and policy attestations verified; expected_infra_hash matched."
+
+          echo "## Attestation Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IMAGE_REF=$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "- POLICY_ATTESTATION_TYPE=https://devsecops.licenta.ro/attestations/custom-zta-policy/v1" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SBOM_ATTESTATION_TYPE=spdxjson" >> "$GITHUB_STEP_SUMMARY"
+          echo "- MANIFEST_DIR=$MANIFEST_DIR" >> "$GITHUB_STEP_SUMMARY"
+          echo "- EXPECTED_INFRA_HASH=$ATTESTED_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "- COMPUTED_INFRA_HASH=$LOCAL_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "- RESULT=PASS" >> "$GITHUB_STEP_SUMMARY"
+
   sign-and-verify:
     runs-on: ubuntu-latest
     needs:
@@ -127,6 +180,13 @@ jobs:
     steps:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign image with Cosign keyless
         env:
@@ -143,5 +203,7 @@ jobs:
 
       - name: Output immutable image reference
         run: |
-          echo "IMAGE_REF=${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}" >> $GITHUB_STEP_SUMMARY
-          echo "SIGNER=https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main" >> $GITHUB_STEP_SUMMARY
+          echo "## Final Signing Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IMAGE_REF=${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SIGNER=https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SIGNATURE_VERIFY=PASS" >> "$GITHUB_STEP_SUMMARY"
