@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.3...v1.3.4) (2026-02-24)
+
+
+### Bug Fixes
+
+* verify fix newline in cannonical spec ([f17cbca](https://github.com/SabinGhost19/vulfastapi/commit/f17cbcaff82941618a70d6e3093bccfb179cf0c8))
+
 ## [1.3.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.2...v1.3.3) (2026-02-24)
 
 
