@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.2...v1.3.0) (2026-02-24)
+
+
+### Features
+
+* break into multiple jobs ([b620681](https://github.com/SabinGhost19/vulfastapi/commit/b620681951480da3206bff4bd7e35f4955085200))
+
 ## [1.2.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.1...v1.2.2) (2026-02-24)
 
 
