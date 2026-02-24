@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.2.0...v1.2.1) (2026-02-24)
+
+
+### Bug Fixes
+
+* image tag ([b83793e](https://github.com/SabinGhost19/vulfastapi/commit/b83793e380d2cc217b905c6d4c70fe20c67dc7d4))
+
 # [1.2.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.1.3...v1.2.0) (2026-02-24)
 
 
