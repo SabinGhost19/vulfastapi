@@ -57,7 +57,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha,prefix=sha-
-            type=raw,value=v1.1.5,enable={{is_default_branch}}
+            type=raw,value=v1.1.7,enable={{is_default_branch}}
 
       - name: Build and push image
         id: build-and-push
@@ -159,7 +159,7 @@ jobs:
             exit 1
           fi
 
-          CANONICAL_SPEC=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S '.[0]')
+          CANONICAL_SPEC=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S --arg image "$IMAGE_REF" '.[0] | .image = $image')
           LOCAL_HASH=$(printf '%s' "$CANONICAL_SPEC" | sha256sum | awk '{print $1}')
           LOCAL_HASH_NORMALIZED=$(echo "$LOCAL_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
 
