@@ -22,6 +22,10 @@ def startup() -> None:
 def health() -> dict:
     return {"status": "ok"}
 
+@app.get("/healthz")
+def health() -> dict:
+    return {"status": "ok"}
+
 
 @app.get("/users/search")
 def search_users(username: str = Query(..., min_length=1)) -> dict:
