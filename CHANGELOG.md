@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.4.0...v1.4.1) (2026-04-16)
+
+
+### Bug Fixes
+
+* **ci:** use valid trivy action release in demo-app pipeline ([2b2005b](https://github.com/SabinGhost19/vulfastapi/commit/2b2005b81c89b86eea8f031184cbab69ed66a12a))
+
 # [1.4.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.4...v1.4.0) (2026-04-16)
 
 
