@@ -234,7 +234,7 @@ jobs:
 
       - name: Attach VBBI attestation
         id: vbbi
-        uses: SabinGhost19/Voucher-Based-Build-Integrity-Action@v1
+        uses: SabinGhost19/Voucher-Based-Build-Integrity-Action@v1.0
         with:
           image: ${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}
           commit-sha: ${{ github.sha }}
