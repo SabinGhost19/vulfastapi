@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.5.0...v1.5.1) (2026-04-16)
+
+
+### Bug Fixes
+
+* diff tag name ([5b30b90](https://github.com/SabinGhost19/vulfastapi/commit/5b30b90d24a524aa16e85eeec409b4b1866cad94))
+
 # [1.5.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.4.2...v1.5.0) (2026-04-16)
 
 
