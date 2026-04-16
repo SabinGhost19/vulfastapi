@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.4.1...v1.4.2) (2026-04-16)
+
+
+### Bug Fixes
+
+* referece custom action with correctt tag ([39c6b92](https://github.com/SabinGhost19/vulfastapi/commit/39c6b922f02e5b26d4bd6a9bdae24e810d553d5f))
+
 ## [1.4.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.4.0...v1.4.1) (2026-04-16)
 
 
