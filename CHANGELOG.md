@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.4...v1.4.0) (2026-04-16)
+
+
+### Features
+
+* provenance enforcer added ([22525c1](https://github.com/SabinGhost19/vulfastapi/commit/22525c1602652837a376690e10e172fb6e83681b))
+
 ## [1.3.4](https://github.com/SabinGhost19/vulfastapi/compare/v1.3.3...v1.3.4) (2026-02-24)
 
 
