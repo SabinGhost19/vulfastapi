@@ -132,7 +132,7 @@ jobs:
       artifact_name: vbbi-scan
     steps:
       - name: Run Trivy scan on pushed image digest
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}
           format: table
