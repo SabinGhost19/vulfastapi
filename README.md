@@ -8,6 +8,7 @@ This repo is used to generate a signed image in GHCR for testing the `ZeroTrustA
 * Push to `ghcr.io`
 * Trivy scan (non-blocking în modul demo curent; raportează `HIGH`/`CRITICAL` fără fail)
 * Cosign keyless signing
+* VBBI attestation pentru proveniența pipeline-ului (HMAC chain + Merkle root) prin action dedicat
 * Self-verify Cosign
 * Output with `IMAGE_REF` and `SIGNER`
 * Image runtime non-root (`USER appuser`) compatibil cu `runAsNonRoot: true`
@@ -43,6 +44,7 @@ From the Job Summary:
 
 * `IMAGE_REF` (ideal for immutable reference)
 * `SIGNER`
+* `VBBI_MERKLE_ROOT`
 
 The `SIGNER` must be used in the ZTA:
 
