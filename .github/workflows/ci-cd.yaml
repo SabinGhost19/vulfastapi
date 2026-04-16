@@ -14,7 +14,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  MANIFESTS_REPO: SabinGhost19/demo-app-manifests-samples
+  MANIFESTS_REPO: SabinGhost19/vulfastapi-manifests-samples
   MANIFESTS_REF: main
   MANIFESTS_SUBPATH: demo-app
   MANIFESTS_CHECKOUT_PATH: manifests-source
