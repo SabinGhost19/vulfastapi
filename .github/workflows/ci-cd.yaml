@@ -220,7 +220,12 @@ jobs:
           # OpenVEX v0.2.0 predicate carries auditor-signed justifications for
           # Trivy false-positives. The operator (vex.py) ingests these to filter
           # CVEs at admission time, avoiding pipeline blocks on unreachable code.
-          cosign attest --yes --predicate vex.json --type vex "$IMAGE_REF"
+          # cosign does not have a shorthand for VEX (unlike `spdxjson`), so the
+          # full OpenVEX predicate-type URI is required.
+          cosign attest --yes \
+            --predicate vex.json \
+            --type "https://openvex.dev/ns/v0.2.0" \
+            "$IMAGE_REF"
 
       - name: Prepare VBBI step specification
         run: |
