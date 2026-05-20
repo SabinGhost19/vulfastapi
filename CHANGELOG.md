@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.0...v1.7.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* bump job ([1d7e2f0](https://github.com/SabinGhost19/vulfastapi/commit/1d7e2f022e058f25eb62e3b8239a046528c79a72))
+
 # [1.7.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.6.1...v1.7.0) (2026-05-20)
 
 
