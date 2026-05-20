@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.6.1...v1.7.0) (2026-05-20)
+
+
+### Features
+
+* **ci:** bump manifests-repo on every signed build ([1c0d258](https://github.com/SabinGhost19/vulfastapi/commit/1c0d258b0448b3bef834f402b2b995d25a13c61c))
+
 ## [1.6.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.6.0...v1.6.1) (2026-05-20)
 
 
