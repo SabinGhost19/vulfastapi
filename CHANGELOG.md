@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.1...v1.7.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* **ci:** self-heal manifest when image is empty (post ae71674 regression) ([0e6997a](https://github.com/SabinGhost19/vulfastapi/commit/0e6997a71a05165246ccd340d585e7d534067dfb))
+
 ## [1.7.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.0...v1.7.1) (2026-05-20)
 
 
