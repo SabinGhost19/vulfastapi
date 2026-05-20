@@ -482,7 +482,12 @@ jobs:
           IMAGE_DIGEST: ${{ needs.build-push.outputs.image_digest }}
         run: |
           set -euo pipefail
-          NEW_IMAGE="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          # `export` is mandatory: yq's strenv(...) reads from process
+          # environment, NOT from shell-local variables. Without export
+          # the substitution silently yields an empty string and the
+          # manifest gets written with .spec.image = "" (the previous
+          # bug that produced commit ae71674).
+          export NEW_IMAGE="${IMAGE_REPO}@${IMAGE_DIGEST}"
           CHANGED=0
           # Walk every YAML file under the demo-app folder; patch only docs
           # whose kind is ZeroTrustApplication and whose .spec.image is the
@@ -498,17 +503,26 @@ jobs:
               continue
             fi
             # Same repo? Only then we bump — guards against accidental
-            # cross-app rewrites.
+            # cross-app rewrites. Strip the @sha256:... portion; if the
+            # current value has no @ we treat it as already-broken
+            # (e.g. the empty-string regression) and overwrite anyway.
             CUR_REPO="${CURRENT%@*}"
-            if [ "$CUR_REPO" != "$IMAGE_REPO" ]; then
+            if [ -n "$CUR_REPO" ] && [ "$CUR_REPO" != "$IMAGE_REPO" ] && [ "$CUR_REPO" != "$CURRENT" ]; then
               echo "skip (different repo $CUR_REPO): $file"
               continue
             fi
             echo "bump: $file ($CURRENT -> $NEW_IMAGE)"
             yq eval -i \
               '(select(.kind == "ZeroTrustApplication") | .spec.image) = strenv(NEW_IMAGE)' \
-              "$file" \
-              -e
+              "$file"
+            # Defensive verification: re-read .spec.image and refuse to
+            # commit an empty value, even if some future yq version
+            # silently mis-handles strenv.
+            WRITTEN=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" | head -1)
+            if [ -z "$WRITTEN" ] || [ "$WRITTEN" = "null" ] || [ "$WRITTEN" = '""' ]; then
+              echo "FATAL: yq wrote an empty image into $file" >&2
+              exit 1
+            fi
             CHANGED=$((CHANGED + 1))
           done < <(find manifests-repo/${{ env.MANIFESTS_SUBPATH }} -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
 
