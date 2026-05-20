@@ -494,24 +494,34 @@ jobs:
           # same repo (avoids overwriting unrelated images that share the
           # manifests dir, e.g. sidecars).
           while IFS= read -r -d '' file; do
-            CURRENT=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" | head -1 || true)
-            if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
+            # Step 1: does this YAML contain a ZeroTrustApplication at all?
+            # If not (it's an SCA, ZTS, raw Deployment...) we skip silently.
+            HAS_ZTA=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .kind' "$file" 2>/dev/null | head -1 || true)
+            if [ "$HAS_ZTA" != "ZeroTrustApplication" ]; then
               continue
             fi
+            # Step 2: read the current .spec.image. Empty string is a
+            # VALID state to detect here — it is the broken aftermath of
+            # commit ae71674 (yq strenv writing "" because NEW_IMAGE was
+            # not exported). We MUST bump in that case, otherwise the
+            # regression heals only after a human edit.
+            CURRENT=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" 2>/dev/null | head -1 || true)
             if [ "$CURRENT" = "$NEW_IMAGE" ]; then
               echo "skip (already at new digest): $file"
               continue
             fi
-            # Same repo? Only then we bump — guards against accidental
-            # cross-app rewrites. Strip the @sha256:... portion; if the
-            # current value has no @ we treat it as already-broken
-            # (e.g. the empty-string regression) and overwrite anyway.
+            # Step 3: same-repo guard. Only enforced when CURRENT actually
+            # has an `@sha256:` segment (so CUR_REPO != CURRENT). Empty,
+            # null, or tag-only values fall through to bump.
             CUR_REPO="${CURRENT%@*}"
-            if [ -n "$CUR_REPO" ] && [ "$CUR_REPO" != "$IMAGE_REPO" ] && [ "$CUR_REPO" != "$CURRENT" ]; then
+            if [ -n "$CURRENT" ] \
+               && [ "$CURRENT" != "null" ] \
+               && [ "$CUR_REPO" != "$CURRENT" ] \
+               && [ "$CUR_REPO" != "$IMAGE_REPO" ]; then
               echo "skip (different repo $CUR_REPO): $file"
               continue
             fi
-            echo "bump: $file ($CURRENT -> $NEW_IMAGE)"
+            echo "bump: $file (${CURRENT:-<empty>} -> $NEW_IMAGE)"
             yq eval -i \
               '(select(.kind == "ZeroTrustApplication") | .spec.image) = strenv(NEW_IMAGE)' \
               "$file"
