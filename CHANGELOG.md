@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.5.2...v1.6.0) (2026-05-20)
+
+
+### Features
+
+* **supply-chain:** RFC 6962 Merkle + Audit-mode + webhook + CEL + VEX + KubeArmor + GUAC ([defea24](https://github.com/SabinGhost19/vulfastapi/commit/defea24e4d633b4b178bc029aaec6a88915bf896))
+
 ## [1.5.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.5.1...v1.5.2) (2026-04-16)
 
 
