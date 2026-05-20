@@ -444,3 +444,96 @@ jobs:
   # those attestations from OCI and ingests them into GUAC asynchronously,
   # so a private/air-gapped GUAC instance never has to be exposed to
   # GitHub Actions. See docs §14.7 (Pull-based Threat Intel).
+
+  # GitOps push-back: after every successful, signed build, bump the image
+  # digest in the manifests repo (`vulfastapi-manifests-samples`). The
+  # operator's expected_infra_hash is computed at attest time over a
+  # canonical spec that embeds the NEW digest, so the ZTA YAML must
+  # reference the same digest at apply time — otherwise the operator's
+  # manifest-hash check rejects the resource. This job keeps the GitOps
+  # repo in lock-step with each release; no manual `sed` step needed.
+  bump-manifests-repo:
+    runs-on: ubuntu-latest
+    needs:
+      - build-push
+      - attestations
+      - sign-and-verify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Checkout manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MANIFESTS_REPO }}
+          ref: ${{ env.MANIFESTS_REF }}
+          token: ${{ secrets.MANIFESTS_REPO_TOKEN }}
+          path: manifests-repo
+          persist-credentials: true
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update ZeroTrustApplication.spec.image with the new digest
+        id: bump
+        env:
+          IMAGE_REPO: ${{ needs.build-push.outputs.image_repo }}
+          IMAGE_DIGEST: ${{ needs.build-push.outputs.image_digest }}
+        run: |
+          set -euo pipefail
+          NEW_IMAGE="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          CHANGED=0
+          # Walk every YAML file under the demo-app folder; patch only docs
+          # whose kind is ZeroTrustApplication and whose .spec.image is the
+          # same repo (avoids overwriting unrelated images that share the
+          # manifests dir, e.g. sidecars).
+          while IFS= read -r -d '' file; do
+            CURRENT=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" | head -1 || true)
+            if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
+              continue
+            fi
+            if [ "$CURRENT" = "$NEW_IMAGE" ]; then
+              echo "skip (already at new digest): $file"
+              continue
+            fi
+            # Same repo? Only then we bump — guards against accidental
+            # cross-app rewrites.
+            CUR_REPO="${CURRENT%@*}"
+            if [ "$CUR_REPO" != "$IMAGE_REPO" ]; then
+              echo "skip (different repo $CUR_REPO): $file"
+              continue
+            fi
+            echo "bump: $file ($CURRENT -> $NEW_IMAGE)"
+            yq eval -i \
+              '(select(.kind == "ZeroTrustApplication") | .spec.image) = strenv(NEW_IMAGE)' \
+              "$file" \
+              -e
+            CHANGED=$((CHANGED + 1))
+          done < <(find manifests-repo/${{ env.MANIFESTS_SUBPATH }} -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
+
+          echo "files_changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "new_image=$NEW_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Commit & push to manifests repo
+        if: ${{ steps.bump.outputs.files_changed != '0' }}
+        env:
+          NEW_IMAGE: ${{ steps.bump.outputs.new_image }}
+        run: |
+          set -euo pipefail
+          cd manifests-repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # [skip ci] keeps a future workflow on the manifests repo from
+          # firing in a loop if one is ever added there.
+          git commit -m "chore(image): bump demo-app to ${NEW_IMAGE} [skip ci]" \
+                     -m "Source build: ${{ github.repository }}@${{ github.sha }}"
+          git push origin "${{ env.MANIFESTS_REF }}"
+
+      - name: Emit summary
+        run: |
+          echo "## Manifests Repo Bump" >> "$GITHUB_STEP_SUMMARY"
+          echo "- target: ${{ env.MANIFESTS_REPO }}@${{ env.MANIFESTS_REF }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- new image: ${{ steps.bump.outputs.new_image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- files changed: ${{ steps.bump.outputs.files_changed }}" >> "$GITHUB_STEP_SUMMARY"
