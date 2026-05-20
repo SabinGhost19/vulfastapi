@@ -1,0 +1,28 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://devsecops.licenta.ro/vex/demo-vulnerable-fastapi",
+  "author": "DevSecOps Licenta team <devsecops@licenta.ro>",
+  "role": "Security analyst",
+  "timestamp": "2026-05-01T00:00:00Z",
+  "version": 1,
+  "tooling": "openvex-cli",
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2024-0000",
+        "name": "CVE-2024-0000"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/demo-vulnerable-fastapi",
+          "subcomponents": [
+            { "@id": "pkg:pypi/example-lib" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The vulnerable function `example_lib.legacy_handler` is not imported nor referenced by demo-vulnerable-fastapi (verified by static analysis + SBOM call-graph). Audited 2026-05-01."
+    }
+  ]
+}
