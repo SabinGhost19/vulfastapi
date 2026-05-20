@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.6.0...v1.6.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **vex:** use full OpenVEX URI (https://openvex.dev/ns/v0.2.0) for cosign attest/verify ([70ac902](https://github.com/SabinGhost19/vulfastapi/commit/70ac902087e3cca772e4bd752c56bd9ede7d82b9))
+
 # [1.6.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.5.2...v1.6.0) (2026-05-20)
 
 
