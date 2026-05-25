@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.3...v1.7.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **slsa:** use dedicated trustedIssuers list for SLSA attestation verify ([9b8f00f](https://github.com/SabinGhost19/vulfastapi/commit/9b8f00fa622232c109cd6901c466b67da3d8171a))
+
 ## [1.7.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.2...v1.7.3) (2026-05-25)
 
 
