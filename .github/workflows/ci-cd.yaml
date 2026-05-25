@@ -208,10 +208,28 @@ jobs:
           path: /tmp/vbbi
 
       - name: Generate and attest SBOM (spdxjson)
+        env:
+          IMAGE_REPO: ${{ needs.build-push.outputs.image_repo }}
+          IMAGE_DIGEST: ${{ needs.build-push.outputs.image_digest }}
         run: |
-          IMAGE_REF=${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
           syft "$IMAGE_REF" -o spdx-json > sbom.spdx.json
+          # Defense in depth: empty/malformed SBOM previously caused silent
+          # "missing attestation" failures downstream — explicit check
+          # so the job fails loudly at the right step.
+          if [ ! -s sbom.spdx.json ]; then
+            echo "FATAL: syft produced an empty SBOM file" >&2
+            exit 1
+          fi
+          if ! jq -e '.SPDXID' sbom.spdx.json >/dev/null; then
+            echo "FATAL: SBOM is not valid SPDX JSON (no SPDXID field)" >&2
+            head -c 512 sbom.spdx.json >&2
+            exit 1
+          fi
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
+          # Give Rekor a moment to commit the entry. The verify step that
+          # runs ~10s later can race the transparency-log batch otherwise.
+          sleep 5
 
       - name: Attest OpenVEX statements (false-positive justifications)
         if: ${{ hashFiles('vex.json') != '' }}
@@ -265,17 +283,42 @@ jobs:
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
       - name: Verify attestations and expected infra hash
+        env:
+          IMAGE_REPO: ${{ needs.build-push.outputs.image_repo }}
+          IMAGE_DIGEST: ${{ needs.build-push.outputs.image_digest }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
-          IMAGE_REF=${{ needs.build-push.outputs.image_repo }}@${{ needs.build-push.outputs.image_digest }}
-          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yaml@refs/heads/main"
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          IDENTITY="https://github.com/${GH_REPOSITORY}/.github/workflows/ci-cd.yaml@refs/heads/main"
           MANIFEST_DIR="./${{ env.MANIFESTS_CHECKOUT_PATH }}/${{ env.MANIFESTS_SUBPATH }}"
 
-          cosign verify-attestation \
-            "$IMAGE_REF" \
-            --type spdxjson \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            >/tmp/sbom-attestation.jsonl
+          # Rekor transparency-log inclusion can lag a few seconds after
+          # cosign attest returns. Retry SBOM verify with bounded backoff
+          # so a slow Rekor batch doesn't fail the whole pipeline.
+          set +e
+          for attempt in 1 2 3 4 5; do
+            cosign verify-attestation \
+              "$IMAGE_REF" \
+              --type spdxjson \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              >/tmp/sbom-attestation.jsonl 2>/tmp/sbom-verify.err
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+              echo "SBOM verify succeeded on attempt $attempt"
+              break
+            fi
+            echo "SBOM verify attempt $attempt failed (rc=$rc), retrying..." >&2
+            cat /tmp/sbom-verify.err >&2 || true
+            sleep $((attempt * 5))
+          done
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "FATAL: SBOM attestation not verifiable after 5 attempts" >&2
+            echo "Attached attestations on image:" >&2
+            cosign tree "$IMAGE_REF" >&2 || true
+            exit 1
+          fi
 
           cosign verify-attestation \
             "$IMAGE_REF" \
