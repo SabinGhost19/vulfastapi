@@ -1,3 +1,10 @@
+## [1.7.3](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.2...v1.7.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **ci:** validate SBOM + retry cosign verify-attestation with backoff ([0116bfc](https://github.com/SabinGhost19/vulfastapi/commit/0116bfc21299caa78761b350f41a7253cb2b73a3))
+
 ## [1.7.2](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.1...v1.7.2) (2026-05-20)
 
 
