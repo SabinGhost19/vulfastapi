@@ -22,6 +22,10 @@ def startup() -> None:
 def health() -> dict:
     return {"status": "ok"}
 
+@app.get("/health_v2")
+def health() -> dict:
+    return {"status": "ok"}
+
 @app.get("/healthz")
 def health() -> dict:
     return {"status": "ok"}
