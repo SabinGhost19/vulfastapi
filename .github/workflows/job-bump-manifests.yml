@@ -1,0 +1,146 @@
+# Reusable job: GitOps push-back. After a successful, signed build, bump the
+# image digest in the manifests repo so the ZTA YAML references the exact digest
+# that was attested (the operator's expected_infra_hash is computed over a
+# canonical spec embedding this digest).
+name: job-bump-manifests
+
+on:
+  workflow_call:
+    inputs:
+      image_repo:
+        description: Fully-qualified image repository
+        required: true
+        type: string
+      image_digest:
+        description: Digest of the newly built image
+        required: true
+        type: string
+      manifests_repo:
+        description: GitOps manifests repository (owner/name)
+        required: true
+        type: string
+      manifests_ref:
+        description: Git ref of the manifests repository
+        required: true
+        type: string
+      manifests_subpath:
+        description: Subdirectory inside the manifests repo for this app
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bump-manifests:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_REPO: ${{ inputs.image_repo }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      MANIFESTS_REPO: ${{ inputs.manifests_repo }}
+      MANIFESTS_REF: ${{ inputs.manifests_ref }}
+      MANIFESTS_SUBPATH: ${{ inputs.manifests_subpath }}
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MANIFESTS_REPO }}
+          ref: ${{ env.MANIFESTS_REF }}
+          token: ${{ secrets.MANIFESTS_REPO_TOKEN }}
+          path: manifests-repo
+          persist-credentials: true
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update ZeroTrustApplication.spec.image with the new digest
+        id: bump
+        run: |
+          set -euo pipefail
+          # `export` is mandatory: yq's strenv(...) reads from process
+          # environment, NOT from shell-local variables. Without export
+          # the substitution silently yields an empty string and the
+          # manifest gets written with .spec.image = "" (the previous
+          # bug that produced commit ae71674).
+          export NEW_IMAGE="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          CHANGED=0
+          # Walk every YAML file under the demo-app folder; patch only docs
+          # whose kind is ZeroTrustApplication and whose .spec.image is the
+          # same repo (avoids overwriting unrelated images that share the
+          # manifests dir, e.g. sidecars).
+          while IFS= read -r -d '' file; do
+            # Step 1: does this YAML contain a ZeroTrustApplication at all?
+            # If not (it's an SCA, ZTS, raw Deployment...) we skip silently.
+            HAS_ZTA=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .kind' "$file" 2>/dev/null | head -1 || true)
+            if [ "$HAS_ZTA" != "ZeroTrustApplication" ]; then
+              continue
+            fi
+            # Step 2: read the current .spec.image. Empty string is a
+            # VALID state to detect here — it is the broken aftermath of
+            # commit ae71674 (yq strenv writing "" because NEW_IMAGE was
+            # not exported). We MUST bump in that case, otherwise the
+            # regression heals only after a human edit.
+            CURRENT=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" 2>/dev/null | head -1 || true)
+            if [ "$CURRENT" = "$NEW_IMAGE" ]; then
+              echo "skip (already at new digest): $file"
+              continue
+            fi
+            # Step 3: same-repo guard. Only enforced when CURRENT actually
+            # has an `@sha256:` segment (so CUR_REPO != CURRENT). Empty,
+            # null, or tag-only values fall through to bump.
+            CUR_REPO="${CURRENT%@*}"
+            if [ -n "$CURRENT" ] \
+               && [ "$CURRENT" != "null" ] \
+               && [ "$CUR_REPO" != "$CURRENT" ] \
+               && [ "$CUR_REPO" != "$IMAGE_REPO" ]; then
+              echo "skip (different repo $CUR_REPO): $file"
+              continue
+            fi
+            echo "bump: $file (${CURRENT:-<empty>} -> $NEW_IMAGE)"
+            yq eval -i \
+              '(select(.kind == "ZeroTrustApplication") | .spec.image) = strenv(NEW_IMAGE)' \
+              "$file"
+            # Defensive verification: re-read .spec.image and refuse to
+            # commit an empty value, even if some future yq version
+            # silently mis-handles strenv.
+            WRITTEN=$(yq eval-all 'select(.kind == "ZeroTrustApplication") | .spec.image' "$file" | head -1)
+            if [ -z "$WRITTEN" ] || [ "$WRITTEN" = "null" ] || [ "$WRITTEN" = '""' ]; then
+              echo "FATAL: yq wrote an empty image into $file" >&2
+              exit 1
+            fi
+            CHANGED=$((CHANGED + 1))
+          done < <(find "manifests-repo/${MANIFESTS_SUBPATH}" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
+
+          echo "files_changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "new_image=$NEW_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Commit & push to manifests repo
+        if: ${{ steps.bump.outputs.files_changed != '0' }}
+        env:
+          NEW_IMAGE: ${{ steps.bump.outputs.new_image }}
+        run: |
+          set -euo pipefail
+          cd manifests-repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # [skip ci] keeps a future workflow on the manifests repo from
+          # firing in a loop if one is ever added there.
+          git commit -m "chore(image): bump demo-app to ${NEW_IMAGE} [skip ci]" \
+                     -m "Source build: ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git push origin "${MANIFESTS_REF}"
+
+      - name: Emit summary
+        run: |
+          echo "## Manifests Repo Bump" >> "$GITHUB_STEP_SUMMARY"
+          echo "- target: ${MANIFESTS_REPO}@${MANIFESTS_REF}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- new image: ${{ steps.bump.outputs.new_image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- files changed: ${{ steps.bump.outputs.files_changed }}" >> "$GITHUB_STEP_SUMMARY"

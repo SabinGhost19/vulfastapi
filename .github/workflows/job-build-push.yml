@@ -1,0 +1,84 @@
+# Reusable job: build & push the container image to the registry.
+# Emits the normalized image repo and the pushed digest so downstream jobs
+# (scan, attestations, sign, bump) all operate on the exact same artifact.
+name: job-build-push
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        description: Container registry host (e.g. ghcr.io)
+        required: true
+        type: string
+      image_name:
+        description: Image name (without registry/owner prefix)
+        required: true
+        type: string
+    outputs:
+      image_repo:
+        description: Fully-qualified image repository (registry/owner/name)
+        value: ${{ jobs.build-push.outputs.image_repo }}
+      image_digest:
+        description: Digest of the pushed image
+        value: ${{ jobs.build-push.outputs.image_digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_repo: ${{ steps.imagevars.outputs.image_repo }}
+      image_digest: ${{ steps.build-and-push.outputs.digest }}
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Normalize image repository name
+        id: imagevars
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          echo "image_repo=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.imagevars.outputs.image_repo }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=v1.1.8,enable={{is_default_branch}}
+
+      - name: Build and push image
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -1,0 +1,314 @@
+# Reusable job: attestations (the trust core of the pipeline).
+# Generates and signs (keyless, via cosign + Fulcio) an SPDX SBOM, an OpenVEX
+# predicate, a VBBI build-integrity voucher and a custom ZTA policy attestation,
+# then verifies all of them and matches the expected_infra_hash.
+#
+# IMPORTANT (keyless identity): because cosign runs INSIDE this reusable
+# workflow, the Fulcio certificate SAN is this file's path, not ci-cd.yaml.
+# Every --certificate-identity below therefore points at job-attestations.yml.
+# The cluster-side consumer (zta-operator / cosign verify) must expect the same
+# identity: .../.github/workflows/job-attestations.yml@refs/heads/main
+name: job-attestations
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        description: Container registry host (e.g. ghcr.io)
+        required: true
+        type: string
+      image_repo:
+        description: Fully-qualified image repository
+        required: true
+        type: string
+      image_digest:
+        description: Digest of the image to attest
+        required: true
+        type: string
+      manifests_repo:
+        description: GitOps manifests repository (owner/name)
+        required: true
+        type: string
+      manifests_ref:
+        description: Git ref of the manifests repository
+        required: true
+        type: string
+      manifests_subpath:
+        description: Subdirectory inside the manifests repo for this app
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  attestations:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ${{ inputs.registry }}
+      IMAGE_REPO: ${{ inputs.image_repo }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      MANIFESTS_REPO: ${{ inputs.manifests_repo }}
+      MANIFESTS_REF: ${{ inputs.manifests_ref }}
+      MANIFESTS_SUBPATH: ${{ inputs.manifests_subpath }}
+      MANIFESTS_CHECKOUT_PATH: manifests-source
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MANIFESTS_REPO }}
+          ref: ${{ env.MANIFESTS_REF }}
+          path: ${{ env.MANIFESTS_CHECKOUT_PATH }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Download lint metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: vbbi-lint
+          path: /tmp/vbbi
+
+      - name: Download test metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: vbbi-test
+          path: /tmp/vbbi
+
+      - name: Download scan metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: vbbi-scan
+          path: /tmp/vbbi
+
+      - name: Generate and attest SBOM (spdxjson)
+        run: |
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          syft "$IMAGE_REF" -o spdx-json > sbom.spdx.json
+          # Defense in depth: empty/malformed SBOM previously caused silent
+          # "missing attestation" failures downstream — explicit check
+          # so the job fails loudly at the right step.
+          if [ ! -s sbom.spdx.json ]; then
+            echo "FATAL: syft produced an empty SBOM file" >&2
+            exit 1
+          fi
+          if ! jq -e '.SPDXID' sbom.spdx.json >/dev/null; then
+            echo "FATAL: SBOM is not valid SPDX JSON (no SPDXID field)" >&2
+            head -c 512 sbom.spdx.json >&2
+            exit 1
+          fi
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
+          # Give Rekor a moment to commit the entry. The verify step that
+          # runs ~10s later can race the transparency-log batch otherwise.
+          sleep 5
+
+      - name: Attest OpenVEX statements (false-positive justifications)
+        if: ${{ hashFiles('vex.json') != '' }}
+        run: |
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          # OpenVEX v0.2.0 predicate carries auditor-signed justifications for
+          # Trivy false-positives. The operator (vex.py) ingests these to filter
+          # CVEs at admission time, avoiding pipeline blocks on unreachable code.
+          # cosign does not have a shorthand for VEX (unlike `spdxjson`), so the
+          # full OpenVEX predicate-type URI is required.
+          cosign attest --yes \
+            --predicate vex.json \
+            --type "https://openvex.dev/ns/v0.2.0" \
+            "$IMAGE_REF"
+
+      - name: Prepare VBBI step specification
+        run: |
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          cat > /tmp/vbbi/build-results.json <<EOF
+          {
+            "exit_code": 0,
+            "image_ref": "$IMAGE_REF",
+            "digest": "${IMAGE_DIGEST}"
+          }
+          EOF
+          cat > /tmp/vbbi/step-spec.json <<'EOF'
+          [
+            {"name": "linting", "file": "/tmp/vbbi/lint-results.json"},
+            {"name": "unit-tests", "file": "/tmp/vbbi/test-results.json"},
+            {"name": "image-build", "file": "/tmp/vbbi/build-results.json"},
+            {"name": "vulnerability-scan", "file": "/tmp/vbbi/scan-results.json"}
+          ]
+          EOF
+
+      - name: Attach VBBI attestation
+        id: vbbi
+        uses: SabinGhost19/Voucher-Based-Build-Integrity-Action@1.0
+        with:
+          image: ${{ inputs.image_repo }}@${{ inputs.image_digest }}
+          commit-sha: ${{ github.sha }}
+          step-spec-path: /tmp/vbbi/step-spec.json
+          hmac-key: ${{ secrets.VBBI_HMAC_KEY || 'dev-only-vbbi-key' }}
+          slsa-level: "3"
+
+      - name: Attach ZTA policy attestation
+        uses: SabinGhost19/policyAttestor-action@main
+        with:
+          image: ${{ inputs.image_repo }}@${{ inputs.image_digest }}
+          policy-path: ./security-policy.yaml
+          manifest-dir: ./${{ env.MANIFESTS_CHECKOUT_PATH }}/${{ env.MANIFESTS_SUBPATH }}
+          attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
+
+      - name: Verify attestations and expected infra hash
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          IDENTITY="https://github.com/${GH_REPOSITORY}/.github/workflows/job-attestations.yml@refs/heads/main"
+          MANIFEST_DIR="./${{ env.MANIFESTS_CHECKOUT_PATH }}/${{ env.MANIFESTS_SUBPATH }}"
+
+          # Rekor transparency-log inclusion can lag a few seconds after
+          # cosign attest returns. Retry SBOM verify with bounded backoff
+          # so a slow Rekor batch doesn't fail the whole pipeline.
+          set +e
+          for attempt in 1 2 3 4 5; do
+            cosign verify-attestation \
+              "$IMAGE_REF" \
+              --type spdxjson \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              >/tmp/sbom-attestation.jsonl 2>/tmp/sbom-verify.err
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+              echo "SBOM verify succeeded on attempt $attempt"
+              break
+            fi
+            echo "SBOM verify attempt $attempt failed (rc=$rc), retrying..." >&2
+            cat /tmp/sbom-verify.err >&2 || true
+            sleep $((attempt * 5))
+          done
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "FATAL: SBOM attestation not verifiable after 5 attempts" >&2
+            echo "Attached attestations on image:" >&2
+            cosign tree "$IMAGE_REF" >&2 || true
+            exit 1
+          fi
+
+          cosign verify-attestation \
+            "$IMAGE_REF" \
+            --type "https://devsecops.licenta.ro/attestations/custom-zta-policy/v1" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            >/tmp/policy-attestation.jsonl
+
+          cosign verify-attestation \
+            "$IMAGE_REF" \
+            --type "https://devsecops.licenta.ro/VBBI/v1" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            >/tmp/vbbi-attestation.jsonl
+
+          mapfile -t YAML_FILES < <(find "$MANIFEST_DIR" -type f \( -name '*.yaml' -o -name '*.yml' \) | sort)
+          if [ ${#YAML_FILES[@]} -eq 0 ]; then
+            echo "No YAML files found in manifest directory: $MANIFEST_DIR" >&2
+            exit 1
+          fi
+
+          ZTA_SPECS_JSON="$(yq ea -o=json '[select(.kind == "ZeroTrustApplication") | .spec]' "${YAML_FILES[@]}")"
+          SPEC_COUNT="$(printf '%s' "$ZTA_SPECS_JSON" | jq 'length')"
+          if [ "$SPEC_COUNT" -ne 1 ]; then
+            echo "Expected exactly one ZeroTrustApplication spec in manifest directory, found: $SPEC_COUNT" >&2
+            exit 1
+          fi
+
+          CANONICAL_SPEC=$(printf '%s' "$ZTA_SPECS_JSON" | jq -c -S --arg image "$IMAGE_REF" '.[0] | .image = $image')
+          LOCAL_HASH=$(printf '%s' "$CANONICAL_SPEC" | sha256sum | awk '{print $1}')
+          LOCAL_HASH_NORMALIZED=$(echo "$LOCAL_HASH" | tr '[:upper:]' '[:lower:]' | sed 's/^sha256://')
+
+          mapfile -t ATTESTED_HASHES < <(
+            jq -r '.payload' /tmp/policy-attestation.jsonl \
+              | while read -r payload; do
+                  printf '%s' "$payload" | base64 -d | jq -r '.predicate.expected_infra_hash // empty'
+                done \
+              | sed '/^$/d' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/^sha256://' \
+              | sort -u
+          )
+
+          if [ ${#ATTESTED_HASHES[@]} -eq 0 ]; then
+            echo "No expected_infra_hash values found in policy attestations" >&2
+            exit 1
+          fi
+
+          MATCH_FOUND="false"
+          for h in "${ATTESTED_HASHES[@]}"; do
+            if [ "$h" = "$LOCAL_HASH_NORMALIZED" ]; then
+              MATCH_FOUND="true"
+              break
+            fi
+          done
+
+          if [ "$MATCH_FOUND" != "true" ]; then
+            echo "expected_infra_hash mismatch: none of attested hashes match local hash" >&2
+            echo "attested_hashes=${ATTESTED_HASHES[*]}" >&2
+            echo "local_hash=$LOCAL_HASH" >&2
+            exit 1
+          fi
+
+          VBBI_REPOSITORY=$(jq -r '.payload' /tmp/vbbi-attestation.jsonl | head -n1 | base64 -d | jq -r '.predicate.build_context.repository')
+          VBBI_ROOT=$(jq -r '.payload' /tmp/vbbi-attestation.jsonl | head -n1 | base64 -d | jq -r '.predicate.merkle_tree.root_hash')
+          VBBI_PROVIDER=$(jq -r '.payload' /tmp/vbbi-attestation.jsonl | head -n1 | base64 -d | jq -r '.predicate.hmac_chain.provider')
+          VBBI_STEP_COUNT=$(jq -r '.payload' /tmp/vbbi-attestation.jsonl | head -n1 | base64 -d | jq -r '.predicate.hmac_chain.steps | length')
+          if [ -z "$VBBI_REPOSITORY" ] || [ -z "$VBBI_ROOT" ] || [ "$VBBI_ROOT" = "null" ]; then
+            echo "VBBI attestation is missing repository or merkle root" >&2
+            exit 1
+          fi
+
+          if [ "$VBBI_PROVIDER" != "shared-secret" ]; then
+            echo "Expected VBBI shared-secret provider but found: $VBBI_PROVIDER" >&2
+            exit 1
+          fi
+
+          if [ "$VBBI_STEP_COUNT" != "4" ]; then
+            echo "Expected exactly 4 VBBI steps but found: $VBBI_STEP_COUNT" >&2
+            exit 1
+          fi
+
+          if [ "$VBBI_ROOT" != "${{ steps.vbbi.outputs.merkle-root }}" ]; then
+            echo "VBBI merkle root mismatch between action output and attestation" >&2
+            exit 1
+          fi
+
+          echo "SBOM and policy attestations verified; expected_infra_hash matched."
+
+          echo "## Attestation Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IMAGE_REF=$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "- POLICY_ATTESTATION_TYPE=https://devsecops.licenta.ro/attestations/custom-zta-policy/v1" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SBOM_ATTESTATION_TYPE=spdxjson" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_ATTESTATION_TYPE=https://devsecops.licenta.ro/VBBI/v1" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_REPOSITORY=$VBBI_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_PROVIDER=$VBBI_PROVIDER" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_STEP_COUNT=$VBBI_STEP_COUNT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_MERKLE_ROOT=$VBBI_ROOT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VBBI_ACTION_MERKLE_ROOT=${{ steps.vbbi.outputs.merkle-root }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- MANIFEST_DIR=$MANIFEST_DIR" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ATTESTED_INFRA_HASH_COUNT=${#ATTESTED_HASHES[@]}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ATTESTED_INFRA_HASHES=${ATTESTED_HASHES[*]}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- COMPUTED_INFRA_HASH=$LOCAL_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "- RESULT=PASS" >> "$GITHUB_STEP_SUMMARY"

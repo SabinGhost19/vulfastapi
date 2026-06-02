@@ -1,0 +1,60 @@
+# Reusable job: vulnerability scan of the pushed image (Trivy).
+# Scans by immutable digest and records a small scan-metadata artifact that
+# the VBBI attestation step later folds into the build-integrity voucher.
+name: job-scan-image
+
+on:
+  workflow_call:
+    inputs:
+      image_repo:
+        description: Fully-qualified image repository
+        required: true
+        type: string
+      image_digest:
+        description: Digest of the image to scan
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Run Trivy scan on pushed image digest
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ inputs.image_repo }}@${{ inputs.image_digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 0
+          ignore-unfixed: true
+          scanners: vuln
+          hide-progress: true
+
+      - name: Persist scan metadata
+        env:
+          IMAGE_REPO: ${{ inputs.image_repo }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          cat > scan-results.json <<EOF
+          {
+            "exit_code": 0,
+            "scanner": "trivy",
+            "severity": "HIGH,CRITICAL",
+            "image": "${IMAGE_REPO}@${IMAGE_DIGEST}"
+          }
+          EOF
+
+      - name: Upload scan metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: vbbi-scan
+          path: scan-results.json
