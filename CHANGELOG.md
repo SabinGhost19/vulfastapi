@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/SabinGhost19/vulfastapi/compare/v1.8.0...v1.8.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **manifests:** enforce securityScanPolicy on payments + analytics SCAs ([eae614f](https://github.com/SabinGhost19/vulfastapi/commit/eae614fe7ddd6b246c07d0cca74b7c0710b8432a))
+
 # [1.8.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.4...v1.8.0) (2026-06-03)
 
 
