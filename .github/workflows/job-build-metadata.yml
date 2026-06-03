@@ -1,7 +1,7 @@
-# Reusable job: build metadata (lint + smoke test).
-# Compiles the FastAPI app, runs a compile-lint surrogate and a route smoke
-# test, then uploads the lint/test JSON as artifacts consumed later by the
-# VBBI attestation step.
+# Reusable job: build metadata (lint surrogate).
+# Compiles the FastAPI app and runs a compile-lint surrogate, uploading the
+# lint JSON as the `vbbi-lint` artifact consumed later by the VBBI attestation
+# step. Real unit tests live in job-unit-tests.yml (vbbi-test artifact).
 name: job-build-metadata
 
 on:
@@ -41,29 +41,8 @@ jobs:
           }
           EOF
 
-      - name: Run application smoke test
-        run: |
-          python - <<'PY' > test-results.json
-          import json
-          from main import app
-          routes = sorted(route.path for route in app.routes)
-          payload = {
-              "exit_code": 0,
-              "framework": "fastapi",
-              "route_count": len(routes),
-              "health_present": "/health" in routes and "/healthz" in routes,
-          }
-          print(json.dumps(payload))
-          PY
-
       - name: Upload lint metadata
         uses: actions/upload-artifact@v4
         with:
           name: vbbi-lint
           path: lint-results.json
-
-      - name: Upload test metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: vbbi-test
-          path: test-results.json

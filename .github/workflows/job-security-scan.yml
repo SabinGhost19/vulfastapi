@@ -1,0 +1,191 @@
+# Reusable job: pre-build security scan (OSS, "Snyk-style").
+# Runs three open-source scanners on SOURCE (before the image is built):
+#   - gitleaks  -> secrets / credentials (BLOCKING gate, fail-fast)
+#   - Semgrep   -> SAST (evidence; blocks only at/above sast_block_severity)
+#   - checkov   -> IaC: Dockerfile + K8s manifests (evidence-only)
+# It uploads the raw reports as the `secscan-raw` artifact, which the
+# attestations job folds into the signed `security-scan/v1` attestation.
+#
+# This job does NOT run cosign, so it introduces NO new keyless identity. The
+# attestation is produced inside job-attestations.yml (identity unchanged).
+name: job-security-scan
+
+on:
+  workflow_call:
+    inputs:
+      block_on_secrets:
+        description: Fail the pipeline (before build) if gitleaks finds any secret.
+        required: false
+        type: boolean
+        default: true
+      sast_block_severity:
+        description: "Min normalized SAST severity that blocks: low|medium|high|critical|off"
+        required: false
+        type: string
+        default: critical
+      manifests_repo:
+        description: Optional GitOps manifests repo (owner/name) to also IaC-scan.
+        required: false
+        type: string
+        default: ""
+      manifests_ref:
+        required: false
+        type: string
+        default: main
+      manifests_subpath:
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    env:
+      SECSCAN_DIR: /tmp/secscan
+      MANIFESTS_REPO: ${{ inputs.manifests_repo }}
+      MANIFESTS_REF: ${{ inputs.manifests_ref }}
+      MANIFESTS_SUBPATH: ${{ inputs.manifests_subpath }}
+      BLOCK_ON_SECRETS: ${{ inputs.block_on_secrets }}
+      SAST_BLOCK_SEVERITY: ${{ inputs.sast_block_severity }}
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare scan workspace
+        run: mkdir -p "$SECSCAN_DIR"
+
+      - name: Checkout manifests for IaC scan
+        if: ${{ inputs.manifests_repo != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.manifests_repo }}
+          ref: ${{ inputs.manifests_ref }}
+          path: secscan-manifests
+          token: ${{ secrets.MANIFESTS_REPO_TOKEN || github.token }}
+
+      # ---- gitleaks: secrets (BLOCKING) ----------------------------------
+      - name: Install gitleaks
+        run: |
+          GL_VERSION=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          echo "GITLEAKS_VERSION=${GL_VERSION}" >> "$GITHUB_ENV"
+          gitleaks version
+
+      - name: Scan for secrets (gitleaks)
+        run: |
+          set +e
+          gitleaks detect --no-git --source . \
+            --report-format json --report-path "$SECSCAN_DIR/gitleaks.json" \
+            --redact
+          rc=$?
+          set -e
+          # gitleaks always writes the report file (empty [] when clean).
+          [ -f "$SECSCAN_DIR/gitleaks.json" ] || echo "[]" > "$SECSCAN_DIR/gitleaks.json"
+          COUNT=$(jq 'length' "$SECSCAN_DIR/gitleaks.json")
+          echo "gitleaks found $COUNT secret(s) (rc=$rc)"
+          if [ "$COUNT" -gt 0 ] && [ "$BLOCK_ON_SECRETS" = "true" ]; then
+            echo "::error::gitleaks found $COUNT secret(s); blocking the build before any image is pushed." >&2
+            jq -r '.[] | "  - \(.RuleID) in \(.File):\(.StartLine)"' "$SECSCAN_DIR/gitleaks.json" >&2 || true
+            exit 1
+          fi
+
+      # ---- Semgrep: SAST (evidence; conditional block) -------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Semgrep + checkov
+        run: |
+          pip install --quiet semgrep checkov
+          echo "SEMGREP_VERSION=$(semgrep --version 2>/dev/null | head -n1)" >> "$GITHUB_ENV"
+          echo "CHECKOV_VERSION=$(checkov --version 2>/dev/null | head -n1)" >> "$GITHUB_ENV"
+
+      - name: Run Semgrep (SAST)
+        run: |
+          set +e
+          semgrep scan --config auto --sarif --metrics off \
+            --output "$SECSCAN_DIR/semgrep.sarif" .
+          set -e
+          [ -f "$SECSCAN_DIR/semgrep.sarif" ] || echo '{"version":"2.1.0","runs":[]}' > "$SECSCAN_DIR/semgrep.sarif"
+
+      - name: SAST gate
+        if: ${{ inputs.sast_block_severity != 'off' }}
+        run: |
+          python3 - "$SECSCAN_DIR/semgrep.sarif" "$SAST_BLOCK_SEVERITY" <<'PY'
+          import json, sys
+          sarif_path, threshold = sys.argv[1], sys.argv[2].lower()
+          min_cvss = {"critical": 9.0, "high": 7.0, "medium": 4.0, "low": 0.1}.get(threshold, 9.0)
+          data = json.load(open(sarif_path))
+          blocking = []
+          for run in data.get("runs", []) or []:
+              meta = {}
+              for r in ((run.get("tool", {}) or {}).get("driver", {}) or {}).get("rules", []) or []:
+                  meta[r.get("id", "")] = (r.get("properties", {}) or {}).get("security-severity", "")
+              for res in run.get("results", []) or []:
+                  try:
+                      cvss = float(meta.get(res.get("ruleId", ""), "") or -1)
+                  except ValueError:
+                      cvss = -1
+                  if cvss >= min_cvss:
+                      blocking.append(res.get("ruleId", "?"))
+          if blocking:
+              print(f"::error::Semgrep found {len(blocking)} finding(s) >= {threshold}: {blocking}")
+              sys.exit(1)
+          print(f"SAST gate passed (no findings >= {threshold}).")
+          PY
+
+      # ---- checkov: IaC (Dockerfile + manifests; evidence-only) ----------
+      - name: Run checkov (IaC)
+        run: |
+          set +e
+          # App repo: Dockerfile + any in-repo k8s yaml.
+          checkov -d . --framework dockerfile,kubernetes \
+            --compact --quiet --soft-fail \
+            -o sarif --output-file-path "$SECSCAN_DIR/checkov-app" >/dev/null 2>&1
+          # GitOps manifests (separate repo), if checked out.
+          if [ -d secscan-manifests ]; then
+            TARGET="secscan-manifests"
+            [ -n "$MANIFESTS_SUBPATH" ] && TARGET="secscan-manifests/$MANIFESTS_SUBPATH"
+            checkov -d "$TARGET" --framework kubernetes \
+              --compact --quiet --soft-fail \
+              -o sarif --output-file-path "$SECSCAN_DIR/checkov-manifests" >/dev/null 2>&1
+          fi
+          set -e
+          # Merge the runs[] of every produced SARIF into one checkov.sarif.
+          SARIFS=$(find "$SECSCAN_DIR" -path '*/checkov-*/*.sarif' 2>/dev/null)
+          if [ -n "$SARIFS" ]; then
+            jq -s '{version:"2.1.0", runs:(map(.runs) | add)}' $SARIFS > "$SECSCAN_DIR/checkov.sarif"
+          else
+            echo '{"version":"2.1.0","runs":[]}' > "$SECSCAN_DIR/checkov.sarif"
+          fi
+          echo "checkov findings: $(jq '[.runs[].results[]] | length' "$SECSCAN_DIR/checkov.sarif")"
+
+      - name: Persist scanner versions
+        run: |
+          cat > "$SECSCAN_DIR/tool-versions.json" <<EOF
+          {
+            "gitleaks": "${GITLEAKS_VERSION:-}",
+            "semgrep": "${SEMGREP_VERSION:-}",
+            "checkov": "${CHECKOV_VERSION:-}"
+          }
+          EOF
+
+      - name: Upload raw security-scan reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: secscan-raw
+          path: |
+            /tmp/secscan/gitleaks.json
+            /tmp/secscan/semgrep.sarif
+            /tmp/secscan/checkov.sarif
+            /tmp/secscan/tool-versions.json

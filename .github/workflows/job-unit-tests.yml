@@ -1,0 +1,65 @@
+# Reusable job: real unit tests (pytest).
+# Runs the test suite and emits a REAL test-results.json (counts + pass/fail)
+# that the VBBI voucher folds in as the "unit-tests" step. This job gates the
+# build (the orchestrator makes build-push depend on it), so a failing test
+# stops the image from ever being built/signed.
+#
+# Test deps come from requirements-dev.txt and are installed ONLY here — never
+# in the Dockerfile — so the runtime image SBOM / CVE posture is unaffected.
+name: job-unit-tests
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (StepSecurity)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (runtime + test)
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: |
+          set +e
+          pytest -q --junitxml=/tmp/pytest.xml
+          rc=$?
+          set -e
+          python - <<'PY' > test-results.json
+          import json, xml.etree.ElementTree as ET
+          root = ET.parse('/tmp/pytest.xml').getroot()
+          suite = root if root.tag == 'testsuite' else root.find('testsuite')
+          tests = int(suite.get('tests', 0))
+          failed = int(suite.get('failures', 0)) + int(suite.get('errors', 0))
+          print(json.dumps({
+              "exit_code": 0 if failed == 0 else 1,
+              "framework": "pytest",
+              "tests": tests,
+              "passed": tests - failed,
+              "failed": failed,
+          }))
+          PY
+          cat test-results.json
+          # Gate: fail the job (and therefore the whole pipeline) on any failure.
+          exit $rc
+
+      - name: Upload test metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: vbbi-test
+          path: test-results.json

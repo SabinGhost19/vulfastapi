@@ -52,3 +52,26 @@ def debug_eval(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail="expr is required")
     result = eval(expr)
     return {"result": str(result)}
+
+
+@app.post("/stats")
+def stats(payload: dict) -> dict:
+    """Compute basic descriptive statistics over a list of numbers.
+
+    Pure, side-effect-free numeric endpoint (no eval/SQL) — used as the
+    well-behaved compute path that the unit tests exercise.
+    """
+    values = payload.get("values")
+    if not isinstance(values, list) or not values:
+        raise HTTPException(status_code=400, detail="values must be a non-empty list")
+    try:
+        nums = [float(v) for v in values]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="values must be numeric") from exc
+    return {
+        "count": len(nums),
+        "sum": sum(nums),
+        "mean": sum(nums) / len(nums),
+        "min": min(nums),
+        "max": max(nums),
+    }

@@ -101,6 +101,12 @@ jobs:
           name: vbbi-scan
           path: /tmp/vbbi
 
+      - name: Download security-scan raw reports
+        uses: actions/download-artifact@v4
+        with:
+          name: secscan-raw
+          path: /tmp/secscan
+
       - name: Generate and attest SBOM (spdxjson)
         run: |
           IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
@@ -172,6 +178,19 @@ jobs:
           policy-path: ./security-policy.yaml
           manifest-dir: ./${{ env.MANIFESTS_CHECKOUT_PATH }}/${{ env.MANIFESTS_SUBPATH }}
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
+
+      # Normalize the gitleaks/Semgrep/checkov raw reports into the canonical
+      # security-scan/v1 predicate and sign it keyless. Runs INSIDE this workflow,
+      # so the Fulcio SAN stays job-attestations.yml — no new trustedIssuer.
+      - name: Attach security-scan attestation
+        id: secscan
+        uses: SabinGhost19/security-scan-attestorAction@v1.0.1
+        with:
+          image: ${{ inputs.image_repo }}@${{ inputs.image_digest }}
+          commit-sha: ${{ github.sha }}
+          gitleaks-report: /tmp/secscan/gitleaks.json
+          semgrep-sarif: /tmp/secscan/semgrep.sarif
+          checkov-sarif: /tmp/secscan/checkov.sarif
 
       - name: Verify attestations and expected infra hash
         env:
@@ -312,3 +331,33 @@ jobs:
           echo "- ATTESTED_INFRA_HASHES=${ATTESTED_HASHES[*]}" >> "$GITHUB_STEP_SUMMARY"
           echo "- COMPUTED_INFRA_HASH=$LOCAL_HASH" >> "$GITHUB_STEP_SUMMARY"
           echo "- RESULT=PASS" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify security-scan attestation
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          IDENTITY="https://github.com/${GH_REPOSITORY}/.github/workflows/job-attestations.yml@refs/heads/main"
+          # Single-shot: the retried SBOM verify above already drained Rekor lag.
+          cosign verify-attestation \
+            "$IMAGE_REF" \
+            --type "https://devsecops.licenta.ro/attestations/security-scan/v1" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            >/tmp/security-scan-attestation.jsonl
+
+          PRED=$(jq -r '.payload' /tmp/security-scan-attestation.jsonl | head -n1 | base64 -d | jq '.predicate')
+          SECRETS=$(printf '%s' "$PRED" | jq -r '.summary.secrets.total')
+          GATING=$(printf '%s' "$PRED" | jq -r '.gating.result')
+          if [ -z "$GATING" ] || [ "$GATING" = "null" ]; then
+            echo "FATAL: security-scan attestation missing gating.result" >&2
+            exit 1
+          fi
+          echo "security-scan attestation verified (gating=$GATING, secrets=$SECRETS)."
+
+          echo "## Security-Scan Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SECURITY_SCAN_TYPE=https://devsecops.licenta.ro/attestations/security-scan/v1" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SECURITY_SCAN_GATING=$GATING" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SECRETS_TOTAL=$SECRETS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SAST_COUNTS=$(printf '%s' "$PRED" | jq -c '.summary.sast')" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IAC_COUNTS=$(printf '%s' "$PRED" | jq -c '.summary.iac')" >> "$GITHUB_STEP_SUMMARY"

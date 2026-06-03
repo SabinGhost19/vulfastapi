@@ -32,8 +32,28 @@ jobs:
   build-metadata:
     uses: ./.github/workflows/job-build-metadata.yml
 
+  unit-tests:
+    uses: ./.github/workflows/job-unit-tests.yml
+
+  # Pre-build OSS security scan ("Snyk-style"): gitleaks (secrets, BLOCKING),
+  # Semgrep (SAST) and checkov (IaC). Runs on source before any image is built;
+  # build-push depends on it so a committed secret fails fast (no image pushed).
+  # Raw reports flow to job-attestations.yml, which signs them as security-scan/v1.
+  security-scan:
+    uses: ./.github/workflows/job-security-scan.yml
+    with:
+      block_on_secrets: true
+      sast_block_severity: critical
+      manifests_repo: SabinGhost19/vulfastapi-manifests-samples
+      manifests_ref: main
+      manifests_subpath: demo-app
+    secrets: inherit
+
   build-push:
-    needs: build-metadata
+    needs:
+      - build-metadata
+      - unit-tests
+      - security-scan
     uses: ./.github/workflows/job-build-push.yml
     with:
       registry: ghcr.io
@@ -50,8 +70,10 @@ jobs:
   attestations:
     needs:
       - build-metadata
+      - unit-tests
       - build-push
       - scan-image
+      - security-scan
     uses: ./.github/workflows/job-attestations.yml
     with:
       registry: ghcr.io
