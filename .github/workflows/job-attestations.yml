@@ -179,9 +179,7 @@ jobs:
           manifest-dir: ./${{ env.MANIFESTS_CHECKOUT_PATH }}/${{ env.MANIFESTS_SUBPATH }}
           attestation-type: https://devsecops.licenta.ro/attestations/custom-zta-policy/v1
 
-      # Normalize the gitleaks/Semgrep/checkov raw reports into the canonical
-      # security-scan/v1 predicate and sign it keyless. Runs INSIDE this workflow,
-      # so the Fulcio SAN stays job-attestations.yml — no new trustedIssuer.
+      # sign security-scan/v1 here so the keyless san stays job-attestations.yml.
       - name: Attach security-scan attestation
         id: secscan
         uses: SabinGhost19/security-scan-attestorAction@v1.0.1
@@ -338,26 +336,10 @@ jobs:
         run: |
           IMAGE_REF="${IMAGE_REPO}@${IMAGE_DIGEST}"
           IDENTITY="https://github.com/${GH_REPOSITORY}/.github/workflows/job-attestations.yml@refs/heads/main"
-          # Single-shot: the retried SBOM verify above already drained Rekor lag.
-          cosign verify-attestation \
-            "$IMAGE_REF" \
+          cosign verify-attestation "$IMAGE_REF" \
             --type "https://devsecops.licenta.ro/attestations/security-scan/v1" \
             --certificate-identity "$IDENTITY" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             >/tmp/security-scan-attestation.jsonl
-
-          PRED=$(jq -r '.payload' /tmp/security-scan-attestation.jsonl | head -n1 | base64 -d | jq '.predicate')
-          SECRETS=$(printf '%s' "$PRED" | jq -r '.summary.secrets.total')
-          GATING=$(printf '%s' "$PRED" | jq -r '.gating.result')
-          if [ -z "$GATING" ] || [ "$GATING" = "null" ]; then
-            echo "FATAL: security-scan attestation missing gating.result" >&2
-            exit 1
-          fi
-          echo "security-scan attestation verified (gating=$GATING, secrets=$SECRETS)."
-
-          echo "## Security-Scan Report" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SECURITY_SCAN_TYPE=https://devsecops.licenta.ro/attestations/security-scan/v1" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SECURITY_SCAN_GATING=$GATING" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SECRETS_TOTAL=$SECRETS" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SAST_COUNTS=$(printf '%s' "$PRED" | jq -c '.summary.sast')" >> "$GITHUB_STEP_SUMMARY"
-          echo "- IAC_COUNTS=$(printf '%s' "$PRED" | jq -c '.summary.iac')" >> "$GITHUB_STEP_SUMMARY"
+          GATING=$(jq -r '.payload' /tmp/security-scan-attestation.jsonl | head -n1 | base64 -d | jq -r '.predicate.gating.result')
+          [ -n "$GATING" ] && [ "$GATING" != "null" ]

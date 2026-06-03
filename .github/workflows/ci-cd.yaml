@@ -35,10 +35,7 @@ jobs:
   unit-tests:
     uses: ./.github/workflows/job-unit-tests.yml
 
-  # Pre-build OSS security scan ("Snyk-style"): gitleaks (secrets, BLOCKING),
-  # Semgrep (SAST) and checkov (IaC). Runs on source before any image is built;
-  # build-push depends on it so a committed secret fails fast (no image pushed).
-  # Raw reports flow to job-attestations.yml, which signs them as security-scan/v1.
+  # pre-build oss scan (gitleaks/semgrep/checkov); blocks the build on secrets.
   security-scan:
     uses: ./.github/workflows/job-security-scan.yml
     with:
