@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.4...v1.8.0) (2026-06-03)
+
+
+### Features
+
+* **supply-chain:** add OSS Snyk-style security-scan attestation flow ([89f44be](https://github.com/SabinGhost19/vulfastapi/commit/89f44befd1a86bbe4a8945139d2160b760847a08))
+
 ## [1.7.4](https://github.com/SabinGhost19/vulfastapi/compare/v1.7.3...v1.7.4) (2026-05-25)
 
 
